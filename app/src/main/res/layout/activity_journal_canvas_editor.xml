@@ -5,6 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
+    android:fitsSystemWindows="true"
     tools:context=".ui.JournalCanvasEditorActivity">
 
     <LinearLayout
@@ -29,6 +30,46 @@
             android:textColor="@color/text_primary"
             android:textSize="20sp" />
 
+        <ImageButton
+            android:id="@+id/undo_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="@dimen/space_8"
+            android:background="@drawable/bg_toolbar_button"
+            android:contentDescription="@string/undo"
+            android:padding="@dimen/space_8"
+            android:src="@drawable/ic_undo" />
+
+        <ImageButton
+            android:id="@+id/redo_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="@dimen/space_8"
+            android:background="@drawable/bg_toolbar_button"
+            android:contentDescription="@string/redo"
+            android:padding="@dimen/space_8"
+            android:src="@drawable/ic_redo" />
+
+        <ImageButton
+            android:id="@+id/layers_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="@dimen/space_8"
+            android:background="@drawable/bg_toolbar_button"
+            android:contentDescription="@string/layers"
+            android:padding="@dimen/space_8"
+            android:src="@drawable/ic_layers" />
+
+        <ImageButton
+            android:id="@+id/export_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="@dimen/space_8"
+            android:background="@drawable/bg_toolbar_button"
+            android:contentDescription="@string/export"
+            android:padding="@dimen/space_8"
+            android:src="@drawable/ic_export" />
+
         <TextView
             android:id="@+id/save_button"
             android:layout_width="wrap_content"
@@ -45,35 +86,14 @@
             android:textSize="14sp" />
     </LinearLayout>
 
-    <com.starnest.journalcanvaseditor.view.CanvasViewportLayout
-        android:id="@+id/canvas_viewport"
+    <com.starnest.journalcanvaseditor.render.JournalCanvasView
+        android:id="@+id/journal_canvas"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:padding="@dimen/space_20"
         app:layout_constraintBottom_toTopOf="@id/bottom_bar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/top_bar">
-
-        <FrameLayout
-            android:id="@+id/canvas_surface"
-            android:layout_width="320dp"
-            android:layout_height="480dp"
-            android:layout_gravity="center"
-            android:background="@drawable/bg_canvas"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:elevation="4dp">
-
-            <com.starnest.journalcanvaseditor.view.GridOverlayView
-                android:id="@+id/grid_overlay"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
-        </FrameLayout>
-    </com.starnest.journalcanvaseditor.view.CanvasViewportLayout>
+        app:layout_constraintTop_toBottomOf="@id/top_bar" />
 
     <LinearLayout
         android:id="@+id/bottom_bar"

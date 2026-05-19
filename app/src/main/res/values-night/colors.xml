@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#7DA2FF</color>
+    <color name="primary_dark">#AFC4FF</color>
+    <color name="background">#111827</color>
+    <color name="surface">#1F2937</color>
+    <color name="surface_alt">#273449</color>
+    <color name="text_primary">#F9FAFB</color>
+    <color name="text_secondary">#CBD5E1</color>
+    <color name="border">#3D4A5F</color>
+    <color name="danger">#F87171</color>
+    <color name="canvas_shadow">#66000000</color>
+</resources>
