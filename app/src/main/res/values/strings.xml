@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Journal Canvas Editor</string>
+    <string name="journal_canvas_editor">Journal Canvas Editor</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="text">Text</string>
+    <string name="image">Image</string>
+    <string name="grid">Grid</string>
+    <string name="reset">Reset</string>
+    <string name="add_text">Add text</string>
+    <string name="edit_text">Edit text</string>
+    <string name="enter_text">Enter text</string>
+    <string name="journal_text">Journal Text</string>
+    <string name="cancel">Cancel</string>
+    <string name="done">Done</string>
+    <string name="canvas_restored">Canvas restored</string>
+    <string name="image_not_loaded">Could not load image</string>
+</resources>
