@@ -68,6 +68,16 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
     }
 
     private fun setupToolbar() {
+        updateThemeButtonIcon()
+        binding.themeButton.safeClick {
+            val isDarkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            if (isDarkMode) {
+                androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO)
+            } else {
+                androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES)
+            }
+        }
+
         binding.actionText.safeClick {
             showTextDialog(null)
         }
@@ -89,6 +99,11 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
             viewModel.forceSave()
             showToast(getString(R.string.saved))
         }
+    }
+
+    private fun updateThemeButtonIcon() {
+        val isDarkMode = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        binding.themeButton.setImageResource(if (isDarkMode) R.drawable.ic_theme_light else R.drawable.ic_theme)
     }
 
     private fun collectState() {
