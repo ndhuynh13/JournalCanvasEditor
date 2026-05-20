@@ -1,19 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Journal Canvas Editor</string>
-    <string name="journal_canvas_editor">Journal Canvas Editor</string>
     <string name="save">Save</string>
     <string name="saved">Saved</string>
     <string name="text">Text</string>
     <string name="image">Image</string>
     <string name="grid">Grid</string>
     <string name="reset">Reset</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="layers">Layers</string>
+    <string name="export">Export</string>
     <string name="add_text">Add text</string>
     <string name="edit_text">Edit text</string>
     <string name="enter_text">Enter text</string>
     <string name="journal_text">Journal Text</string>
+    <string name="tap_canvas_to_place_text">Tap the canvas to place text</string>
     <string name="cancel">Cancel</string>
     <string name="done">Done</string>
-    <string name="canvas_restored">Canvas restored</string>
-    <string name="image_not_loaded">Could not load image</string>
+    <string name="delete">Delete</string>
+    <string name="exported">Canvas exported</string>
+    <string name="export_failed">Export failed</string>
+    <string name="bring_forward">Bring forward</string>
+    <string name="send_backward">Send backward</string>
+    <string name="bring_to_front">Bring to front</string>
+    <string name="send_to_back">Send to back</string>
+    <string name="hide_show">Hide / Show</string>
+    <string name="lock_unlock">Lock / Unlock</string>
+    <string name="unlock">Unlock</string>
 </resources>

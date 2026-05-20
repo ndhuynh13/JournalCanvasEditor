@@ -7,7 +7,14 @@
     <color name="surface_alt">#EEF2F7</color>
     <color name="text_primary">#182235</color>
     <color name="text_secondary">#667085</color>
+    <color name="canvas_text_default">#182235</color>
     <color name="border">#D9E1EC</color>
     <color name="danger">#EF4444</color>
-    <color name="canvas_shadow">#22000000</color>
+    <color name="canvas_background">#FFFFFF</color>
+    <color name="canvas_grid">#282E6BFF</color>
+    <color name="canvas_missing_image">#E6EBF4</color>
+    <color name="canvas_selection">#2E6BFF</color>
+    <color name="canvas_handle_fill">#FFFFFF</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="launcher_accent">#C7D7FF</color>
 </resources>
