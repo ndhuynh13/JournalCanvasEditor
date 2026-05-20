@@ -2,17 +2,14 @@ package com.starnest.journalcanvaseditor.render
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PointF
-import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
-import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.content.ContextCompat
 import com.starnest.journalcanvaseditor.R
 import com.starnest.journalcanvaseditor.domain.EditorDocument
 import com.starnest.journalcanvaseditor.domain.EditorObject
@@ -22,46 +19,32 @@ import com.starnest.journalcanvaseditor.domain.SnapGuide
 import com.starnest.journalcanvaseditor.domain.ViewportState
 import kotlin.math.atan2
 import kotlin.math.hypot
-import kotlin.math.min
 
 class JournalCanvasView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
     private val bitmapCache = BitmapCache()
-    private val renderer = CanvasRenderer(bitmapCache)
+    private val renderer = CanvasRenderer(context, bitmapCache)
+    private val viewportTransformer = ViewportTransformer()
+    private val hitTester = ObjectHitTester(viewportTransformer)
+    private val spatialIndex = CanvasObjectSpatialIndex()
+    private val selectionRenderer = SelectionRenderer(context, hitTester)
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private val handleVisualRadiusPx = 16f * resources.displayMetrics.density
-    private val handleTouchRadiusPx = 34f * resources.displayMetrics.density
+    private val handleTouchRadiusPx = 16f * resources.displayMetrics.density
 
-    private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(46, 107, 255)
-        strokeWidth = 2f * resources.displayMetrics.density
-        style = Paint.Style.STROKE
-    }
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.FILL
-    }
-    private val handleStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(46, 107, 255)
-        strokeWidth = 2f * resources.displayMetrics.density
-        style = Paint.Style.STROKE
-    }
     private val guidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(46, 107, 255)
+        color = ContextCompat.getColor(context, R.color.canvas_selection)
         strokeWidth = 1.5f * resources.displayMetrics.density
     }
-    private val handleIcons: Map<Handle, Drawable?> = mapOf(
-        Handle.Delete to AppCompatResources.getDrawable(context, R.drawable.ic_close),
-        Handle.Flip to AppCompatResources.getDrawable(context, R.drawable.ic_flip),
-        Handle.Rotate to AppCompatResources.getDrawable(context, R.drawable.ic_rotate),
-        Handle.Resize to AppCompatResources.getDrawable(context, R.drawable.ic_resize)
-    )
 
     private var document = EditorDocument()
     private var selectedObjectId: String? = null
     private var guides: List<SnapGuide> = emptyList()
+    private var visibleObjectsForDraw: List<EditorObject> = emptyList()
+    private var indexedObjectsSource: List<EditorObject>? = null
+    private var indexedCanvasWidth = Float.NaN
+    private var indexedCanvasHeight = Float.NaN
 
     private var mode: GestureMode = GestureMode.Idle
     private var downRawX = 0f
@@ -84,6 +67,8 @@ class JournalCanvasView @JvmOverloads constructor(
     var onDeleteObject: ((String) -> Unit)? = null
     var onFlipObject: ((String) -> Unit)? = null
     var onEditText: ((String) -> Unit)? = null
+    var onCanvasTap: ((Float, Float) -> Unit)? = null
+    var isPlacementMode: Boolean = false
 
     private val scaleDetector = ScaleGestureDetector(
         context,
@@ -99,7 +84,7 @@ class JournalCanvasView @JvmOverloads constructor(
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return true
                 }
-                mode = GestureMode.CanvasTransform
+                startCanvasPan()
                 return true
             }
 
@@ -146,6 +131,7 @@ class JournalCanvasView @JvmOverloads constructor(
         this.document = document
         this.selectedObjectId = selectedObjectId
         this.guides = guides
+        rebuildRenderCachesIfNeeded(document)
         activeObjectLatest = selectedObjectId?.let { id -> document.objects.firstOrNull { it.id == id } }
         invalidate()
     }
@@ -159,6 +145,7 @@ class JournalCanvasView @JvmOverloads constructor(
             selectedObjectId = selectedObjectId,
             drawGrid = document.viewport.showGrid,
             drawSelection = true,
+            objectsToRender = visibleObjectsForDraw,
             selectionRenderer = ::drawSelection
         )
         drawGuides(canvas)
@@ -172,7 +159,10 @@ class JournalCanvasView @JvmOverloads constructor(
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> handleDown(event)
             MotionEvent.ACTION_MOVE -> handleMove(event)
-            MotionEvent.ACTION_UP -> handleUp(event)
+            MotionEvent.ACTION_UP -> {
+                performClick()
+                handleUp(event)
+            }
             MotionEvent.ACTION_CANCEL -> {
                 clearGesture()
                 true
@@ -188,6 +178,11 @@ class JournalCanvasView @JvmOverloads constructor(
         lastRawX = event.rawX
         lastRawY = event.rawY
         selectedIdAtDown = selectedObjectId
+
+        if (isPlacementMode) {
+            mode = GestureMode.PlaceObject
+            return true
+        }
 
         val selected = selectedObject()
         val handle = selected?.takeIf { !it.locked }?.let { hitHandle(event.rawX, event.rawY, it) }
@@ -213,8 +208,12 @@ class JournalCanvasView @JvmOverloads constructor(
 
         val canvasPoint = screenToCanvas(event.rawX, event.rawY)
         val hitObject = hitObject(canvasPoint.x, canvasPoint.y)
-        if (hitObject != null && !hitObject.locked) {
+        if (hitObject != null) {
             onSelectObject?.invoke(hitObject.id)
+            if (hitObject.locked) {
+                mode = GestureMode.Idle
+                return true
+            }
             activeObjectStart = hitObject
             activeObjectLatest = hitObject
             mode = GestureMode.Move(hitObject.id)
@@ -222,7 +221,7 @@ class JournalCanvasView @JvmOverloads constructor(
         }
 
         onSelectObject?.invoke(null)
-        mode = GestureMode.CanvasTransform
+        startCanvasPan()
         return true
     }
 
@@ -244,7 +243,7 @@ class JournalCanvasView @JvmOverloads constructor(
                 val center = canvasToScreen(start.centerX, start.centerY)
                 onRotateObject?.invoke(current.objectId, normalizeDegrees(angle(center.x, center.y, event.rawX, event.rawY) - startAngleOffset), false)
             }
-            GestureMode.CanvasTransform -> Unit
+            GestureMode.CanvasTransform -> panCanvasBy(dxScreen, dyScreen)
             else -> Unit
         }
 
@@ -255,6 +254,7 @@ class JournalCanvasView @JvmOverloads constructor(
 
     private fun handleUp(event: MotionEvent): Boolean {
         val endedMode = mode
+        val isTap = distance(downRawX, downRawY, event.rawX, event.rawY) < touchSlop
         when (val current = endedMode) {
             is GestureMode.Move -> onMoveObject?.invoke(current.objectId, 0f, 0f, true)
             is GestureMode.Resize -> activeObjectLatest?.let {
@@ -263,11 +263,12 @@ class JournalCanvasView @JvmOverloads constructor(
             is GestureMode.Rotate -> activeObjectLatest?.let { onRotateObject?.invoke(current.objectId, it.rotation, true) }
             is GestureMode.Delete -> onDeleteObject?.invoke(current.objectId)
             is GestureMode.Flip -> onFlipObject?.invoke(current.objectId)
-            GestureMode.CanvasTransform -> onViewportChanged?.invoke(document.viewport, true)
+            GestureMode.CanvasTransform -> commitCanvasTransform()
+            GestureMode.PlaceObject -> handleCanvasPlacementTap(event)
             else -> Unit
         }
 
-        if (endedMode is GestureMode.Move && distance(downRawX, downRawY, event.rawX, event.rawY) < touchSlop) {
+        if (endedMode is GestureMode.Move && isTap) {
             val point = screenToCanvas(event.rawX, event.rawY)
             val hit = hitObject(point.x, point.y)
             val hitId = hit?.id
@@ -280,10 +281,36 @@ class JournalCanvasView @JvmOverloads constructor(
         return true
     }
 
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    private fun handleCanvasPlacementTap(event: MotionEvent) {
+        if (distance(downRawX, downRawY, event.rawX, event.rawY) >= touchSlop) return
+        val point = screenToCanvas(event.rawX, event.rawY)
+        if (point.x in 0f..document.canvasWidth && point.y in 0f..document.canvasHeight) {
+            onCanvasTap?.invoke(point.x, point.y)
+        }
+    }
+
     private fun updateViewport(viewport: ViewportState, commit: Boolean) {
         document = document.copy(viewport = viewport)
         onViewportChanged?.invoke(viewport, commit)
         invalidate()
+    }
+
+    private fun startCanvasPan() {
+        mode = GestureMode.CanvasTransform
+    }
+
+    private fun panCanvasBy(dxScreen: Float, dyScreen: Float) {
+        if (dxScreen == 0f && dyScreen == 0f) return
+        updateViewport(viewportTransformer.panByScreenDelta(document, width, height, dxScreen, dyScreen), commit = false)
+    }
+
+    private fun commitCanvasTransform() {
+        onViewportChanged?.invoke(document.viewport, true)
     }
 
     private fun clearGesture() {
@@ -298,43 +325,39 @@ class JournalCanvasView @JvmOverloads constructor(
     private fun selectedObject(): EditorObject? = document.objects.firstOrNull { it.id == selectedObjectId }
 
     private fun hitObject(x: Float, y: Float): EditorObject? {
-        return document.objects
+        return hitTester.hitObject(x, y, spatialIndex.query(x, y))
+    }
+
+    private fun rebuildRenderCachesIfNeeded(document: EditorDocument) {
+        if (
+            indexedObjectsSource === document.objects &&
+            indexedCanvasWidth == document.canvasWidth &&
+            indexedCanvasHeight == document.canvasHeight
+        ) {
+            return
+        }
+
+        visibleObjectsForDraw = document.objects
             .asSequence()
             .filter { it.visible }
-            .sortedByDescending { it.zIndex }
-            .firstOrNull { obj ->
-                val inverse = Matrix()
-                objectMatrix(obj).invert(inverse)
-                val pts = floatArrayOf(x, y)
-                inverse.mapPoints(pts)
-                pts[0] in 0f..obj.width && pts[1] in 0f..obj.height
-            }
+            .sortedBy { it.zIndex }
+            .toList()
+        spatialIndex.rebuild(document, visibleObjectsForDraw)
+        indexedObjectsSource = document.objects
+        indexedCanvasWidth = document.canvasWidth
+        indexedCanvasHeight = document.canvasHeight
     }
 
     private fun hitHandle(rawX: Float, rawY: Float, obj: EditorObject): Handle? {
-        return handleScreenPoints(obj).entries.firstOrNull { (_, point) ->
-            distance(point.x, point.y, rawX, rawY) <= handleTouchRadiusPx
-        }?.key
+        return hitTester.hitHandle(rawX, rawY, obj, this, document, handleTouchRadiusPx)?.toHandle()
     }
 
     private fun drawSelection(canvas: Canvas, obj: EditorObject) {
-        canvas.save()
-        canvas.concat(objectMatrix(obj))
-        canvas.drawRect(0f, 0f, obj.width, obj.height, selectionPaint)
-        canvas.restore()
-
-        if (!obj.locked) {
-            handleCanvasPoints(obj).forEach { (handle, canvasPoint) ->
-                val radius = handleVisualRadiusPx / totalScale()
-                canvas.drawCircle(canvasPoint.x, canvasPoint.y, radius, handlePaint)
-                canvas.drawCircle(canvasPoint.x, canvasPoint.y, radius, handleStrokePaint)
-                drawHandleIcon(canvas, handle, canvasPoint, radius)
-            }
-        }
+        selectionRenderer.draw(canvas, obj, totalScale())
     }
 
     private fun drawGuides(canvas: Canvas) {
-        guides.forEach { guide ->
+        for (guide in guides) {
             when (guide.orientation) {
                 GuideOrientation.Vertical -> canvas.drawLine(guide.position, guide.start, guide.position, guide.end, guidePaint)
                 GuideOrientation.Horizontal -> canvas.drawLine(guide.start, guide.position, guide.end, guide.position, guidePaint)
@@ -342,107 +365,25 @@ class JournalCanvasView @JvmOverloads constructor(
         }
     }
 
-    private fun handleCanvasPoints(obj: EditorObject): Map<Handle, PointF> {
-        val matrix = objectMatrix(obj)
-        fun map(x: Float, y: Float): PointF {
-            val pts = floatArrayOf(x, y)
-            matrix.mapPoints(pts)
-            return PointF(pts[0], pts[1])
-        }
-        return mapOf(
-            Handle.Delete to map(0f, 0f),
-            Handle.Flip to map(obj.width, 0f),
-            Handle.Rotate to map(0f, obj.height),
-            Handle.Resize to map(obj.width, obj.height)
-        )
-    }
-
-    private fun handleScreenPoints(obj: EditorObject): Map<Handle, PointF> {
-        val matrix = Matrix(objectMatrix(obj)).apply { postConcat(viewportMatrix()) }
-        fun map(x: Float, y: Float): PointF {
-            val pts = floatArrayOf(x, y)
-            matrix.mapPoints(pts)
-            val location = IntArray(2)
-            getLocationOnScreen(location)
-            return PointF(pts[0] + location[0], pts[1] + location[1])
-        }
-        return mapOf(
-            Handle.Delete to map(0f, 0f),
-            Handle.Flip to map(obj.width, 0f),
-            Handle.Rotate to map(0f, obj.height),
-            Handle.Resize to map(obj.width, obj.height)
-        )
-    }
-
-    private fun drawHandleIcon(canvas: Canvas, handle: Handle, center: PointF, radius: Float) {
-        val icon = handleIcons[handle] ?: return
-        val padding = radius * 0.34f
-        val left = (center.x - radius + padding).toInt()
-        val top = (center.y - radius + padding).toInt()
-        val right = (center.x + radius - padding).toInt()
-        val bottom = (center.y + radius - padding).toInt()
-        icon.setBounds(left, top, right, bottom)
-        icon.draw(canvas)
-    }
-
-    private fun objectMatrix(obj: EditorObject): Matrix {
-        return Matrix().apply {
-            postTranslate(-obj.width / 2f, -obj.height / 2f)
-            if (obj.flipped) postScale(-1f, 1f)
-            postRotate(obj.rotation)
-            postTranslate(obj.centerX, obj.centerY)
-        }
-    }
-
-    private fun viewportMatrix(): Matrix {
-        return Matrix().apply {
-            val base = baseScale()
-            val scale = base * document.viewport.scale
-            postScale(scale, scale)
-            postTranslate(
-                baseTranslateX() + document.viewport.panX * base,
-                baseTranslateY() + document.viewport.panY * base
-            )
-        }
+    private fun viewportMatrix(): android.graphics.Matrix {
+        return viewportTransformer.viewportMatrix(document, width, height)
     }
 
     private fun screenToCanvas(rawX: Float, rawY: Float): PointF {
-        val location = IntArray(2)
-        getLocationOnScreen(location)
-        return viewToCanvas(rawX - location[0], rawY - location[1])
+        return viewportTransformer.rawToCanvas(document, this, rawX, rawY)
     }
 
     private fun viewToCanvas(x: Float, y: Float): PointF {
-        val pts = floatArrayOf(x, y)
-        val inverse = Matrix()
-        viewportMatrix().invert(inverse)
-        inverse.mapPoints(pts)
-        return PointF(pts[0], pts[1])
+        return viewportTransformer.viewToCanvas(document, width, height, x, y)
     }
 
     private fun canvasToScreen(x: Float, y: Float): PointF {
-        val pts = floatArrayOf(x, y)
-        viewportMatrix().mapPoints(pts)
-        val location = IntArray(2)
-        getLocationOnScreen(location)
-        return PointF(pts[0] + location[0], pts[1] + location[1])
+        return viewportTransformer.canvasToRaw(document, this, x, y)
     }
 
-    private fun baseScale(): Float {
-        val horizontal = width / document.canvasWidth
-        val vertical = height / document.canvasHeight
-        return min(horizontal, vertical).coerceAtLeast(0.1f) * 0.9f
-    }
-
-    private fun totalScale(): Float = baseScale() * document.viewport.scale
-    private fun baseTranslateX(): Float = (width - document.canvasWidth * baseScale()) / 2f
-    private fun baseTranslateY(): Float = (height - document.canvasHeight * baseScale()) / 2f
+    private fun totalScale(): Float = viewportTransformer.totalScale(document, width, height)
     private fun ViewportState.zoomAt(nextScale: Float, focusX: Float, focusY: Float): ViewportState {
-        val focusCanvas = viewToCanvas(focusX, focusY)
-        val base = baseScale()
-        val nextPanX = (focusX - baseTranslateX() - focusCanvas.x * base * nextScale) / base
-        val nextPanY = (focusY - baseTranslateY() - focusCanvas.y * base * nextScale) / base
-        return copy(scale = nextScale, panX = nextPanX, panY = nextPanY)
+        return viewportTransformer.zoomAt(document, width, height, nextScale, focusX, focusY)
     }
 
     private fun scaledTextSize(obj: EditorObject, factor: Float): Float? {
@@ -455,6 +396,15 @@ class JournalCanvasView @JvmOverloads constructor(
 
     private enum class Handle { Delete, Flip, Rotate, Resize }
 
+    private fun CanvasHandle.toHandle(): Handle {
+        return when (this) {
+            CanvasHandle.Delete -> Handle.Delete
+            CanvasHandle.Flip -> Handle.Flip
+            CanvasHandle.Rotate -> Handle.Rotate
+            CanvasHandle.Resize -> Handle.Resize
+        }
+    }
+
     private sealed interface GestureMode {
         data object Idle : GestureMode
         data object CanvasTransform : GestureMode
@@ -464,6 +414,7 @@ class JournalCanvasView @JvmOverloads constructor(
         data class Rotate(val objectId: String) : GestureMode
         data class Delete(val objectId: String) : GestureMode
         data class Flip(val objectId: String) : GestureMode
+        data object PlaceObject : GestureMode
     }
 
     private companion object {

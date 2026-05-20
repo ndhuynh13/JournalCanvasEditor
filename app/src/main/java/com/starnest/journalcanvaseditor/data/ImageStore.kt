@@ -2,7 +2,6 @@ package com.starnest.journalcanvaseditor.data
 
 import android.content.Context
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -19,28 +18,32 @@ data class StoredImage(
 )
 
 class ImageStore @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val imageDir = File(context.filesDir, IMAGE_DIR_NAME)
 
-    suspend fun copy(uri: Uri): StoredImage = withContext(Dispatchers.IO) {
-        imageDir.mkdirs()
-        val extension = context.contentResolver.getType(uri)?.substringAfterLast('/') ?: "jpg"
-        val file = File(imageDir, "image_${UUID.randomUUID()}.$extension")
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Cannot open selected image" }
-            file.outputStream().use { output -> input.copyTo(output) }
-        }
+    suspend fun copy(uri: Uri): Result<StoredImage> = withContext(Dispatchers.IO) {
+        runCatching {
+            imageDir.mkdirs()
+            val extension = context.contentResolver.getType(uri)?.substringAfterLast('/') ?: "jpg"
+            val file = File(imageDir, "image_${UUID.randomUUID()}.$extension")
+            val input = requireNotNull(context.contentResolver.openInputStream(uri)) {
+                "Cannot open selected image"
+            }
+            input.use { stream ->
+                file.outputStream().use { output -> stream.copyTo(output) }
+            }
 
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, options)
-        val rotation = readRotation(file)
-        val swapped = rotation == 90 || rotation == 270
-        StoredImage(
-            path = file.absolutePath,
-            width = if (swapped) options.outHeight else options.outWidth,
-            height = if (swapped) options.outWidth else options.outHeight
-        )
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            val rotation = readRotation(file)
+            val swapped = rotation == 90 || rotation == 270
+            StoredImage(
+                path = file.absolutePath,
+                width = if (swapped) options.outHeight else options.outWidth,
+                height = if (swapped) options.outWidth else options.outHeight
+            )
+        }
     }
 
     private fun readRotation(file: File): Int {

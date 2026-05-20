@@ -1,7 +1,7 @@
 package com.starnest.journalcanvaseditor.domain
 
 sealed interface EditorAction {
-    data class AddText(val text: String) : EditorAction
+    data class AddText(val text: String, val centerX: Float? = null, val centerY: Float? = null) : EditorAction
     data class AddImage(
         val imagePath: String,
         val originalWidth: Int,

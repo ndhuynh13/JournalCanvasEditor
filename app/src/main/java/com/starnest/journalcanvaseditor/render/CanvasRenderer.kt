@@ -1,23 +1,32 @@
 package com.starnest.journalcanvaseditor.render
 
+import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import androidx.core.content.ContextCompat
+import com.starnest.journalcanvaseditor.R
 import com.starnest.journalcanvaseditor.domain.EditorDocument
 import com.starnest.journalcanvaseditor.domain.EditorObject
 import com.starnest.journalcanvaseditor.domain.EditorObjectType
 
 class CanvasRenderer(
+    context: Context,
     private val bitmapCache: BitmapCache,
-    private val textLayoutCache: TextLayoutCache = TextLayoutCache()
+    private val textLayoutCache: TextLayoutCache = TextLayoutCache(
+        defaultTextColor = ContextCompat.getColor(context, R.color.canvas_text_default)
+    )
 ) {
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.canvas_background)
+    }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(40, 46, 107, 255)
+        color = ContextCompat.getColor(context, R.color.canvas_grid)
         strokeWidth = 1f
     }
-    private val missingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(230, 235, 244) }
+    private val missingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.canvas_missing_image)
+    }
 
     fun renderDocument(
         canvas: Canvas,
@@ -25,21 +34,26 @@ class CanvasRenderer(
         selectedObjectId: String?,
         drawGrid: Boolean,
         drawSelection: Boolean,
+        objectsToRender: List<EditorObject>? = null,
         selectionRenderer: ((Canvas, EditorObject) -> Unit)? = null
     ) {
         canvas.drawRect(0f, 0f, document.canvasWidth, document.canvasHeight, backgroundPaint)
+        canvas.save()
+        canvas.clipRect(0f, 0f, document.canvasWidth, document.canvasHeight)
         if (drawGrid) drawGrid(canvas, document)
 
-        document.objects
-            .asSequence()
-            .filter { it.visible }
-            .sortedBy { it.zIndex }
-            .forEach { obj ->
-                drawObject(canvas, obj)
-                if (drawSelection && obj.id == selectedObjectId) {
-                    selectionRenderer?.invoke(canvas, obj)
-                }
+        val objects = objectsToRender ?: document.objects
+                .asSequence()
+                .filter { it.visible }
+                .sortedBy { it.zIndex }
+                .toList()
+        for (obj in objects) {
+            drawObject(canvas, obj)
+            if (drawSelection && obj.id == selectedObjectId) {
+                selectionRenderer?.invoke(canvas, obj)
             }
+        }
+        canvas.restore()
     }
 
     fun drawObject(canvas: Canvas, obj: EditorObject) {
@@ -81,12 +95,16 @@ class CanvasRenderer(
         var x = 0f
         while (x <= document.canvasWidth) {
             canvas.drawLine(x, 0f, x, document.canvasHeight, gridPaint)
-            x += 120f
+            x += GRID_SPACING
         }
         var y = 0f
         while (y <= document.canvasHeight) {
             canvas.drawLine(0f, y, document.canvasWidth, y, gridPaint)
-            y += 120f
+            y += GRID_SPACING
         }
+    }
+
+    private companion object {
+        const val GRID_SPACING = 120f
     }
 }

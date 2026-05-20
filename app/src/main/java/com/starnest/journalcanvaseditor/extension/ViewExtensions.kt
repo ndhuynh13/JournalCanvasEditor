@@ -10,6 +10,8 @@ fun View.safeClick(onClick: (View) -> Unit) {
     setOnClickListener { view ->
         view.isClickable = false
         onClick(view)
-        view.postDelayed({ view.isClickable = true }, 400L)
+        view.postDelayed({ view.isClickable = true }, CLICK_DEBOUNCE_MS)
     }
 }
+
+private const val CLICK_DEBOUNCE_MS = 400L

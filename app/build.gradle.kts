@@ -45,6 +45,13 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    lint {
+        disable += setOf(
+            "AndroidGradlePluginVersion",
+            "GradleDependency",
+            "OldTargetApi"
+        )
+    }
 }
 
 dependencies {
@@ -58,7 +65,6 @@ dependencies {
     implementation(libs.material)
     implementation(libs.gson)
     implementation(libs.androidx.exifinterface)
-    implementation(libs.androidx.recyclerview)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 }

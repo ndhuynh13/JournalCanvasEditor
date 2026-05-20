@@ -1,6 +1,5 @@
 package com.starnest.journalcanvaseditor.domain
 
-import android.graphics.Color
 import java.util.UUID
 
 const val DEFAULT_CANVAS_WIDTH = 1080f
@@ -42,7 +41,7 @@ data class EditorObject(
     val locked: Boolean = false,
     val text: String = "",
     val textSize: Float = 64f,
-    val textColor: Int = Color.rgb(24, 34, 53),
+    val textColor: Int? = null,
     val typefaceStyle: Int = 1,
     val imagePath: String = "",
     val imageOriginalWidth: Int = 0,

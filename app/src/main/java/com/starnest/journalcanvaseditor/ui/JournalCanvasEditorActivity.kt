@@ -1,26 +1,20 @@
 package com.starnest.journalcanvaseditor.ui
 
-import android.app.AlertDialog
 import android.os.Bundle
-import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.starnest.journalcanvaseditor.R
 import com.starnest.journalcanvaseditor.databinding.ActivityJournalCanvasEditorBinding
-import com.starnest.journalcanvaseditor.databinding.ItemEditorActionBinding
 import com.starnest.journalcanvaseditor.domain.EditorAction
 import com.starnest.journalcanvaseditor.domain.EditorObject
 import com.starnest.journalcanvaseditor.domain.EditorObjectType
 import com.starnest.journalcanvaseditor.domain.ExportStatus
-import com.starnest.journalcanvaseditor.domain.LayerDirection
-import com.starnest.journalcanvaseditor.extension.dp
 import com.starnest.journalcanvaseditor.extension.safeClick
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -29,6 +23,8 @@ import kotlinx.coroutines.launch
 class JournalCanvasEditorActivity : AppCompatActivity() {
     private lateinit var binding: ActivityJournalCanvasEditorBinding
     private val viewModel: JournalCanvasEditorViewModel by viewModels()
+    private val dialogs: EditorDialogs by lazy { EditorDialogs(this) }
+    private var pendingTextPlacement: String? = null
 
     private val imagePicker = registerForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -63,6 +59,7 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
         onGuidesChanged = { viewModel.dispatch(EditorAction.SetSnapGuides(it)) }
         onDeleteObject = { viewModel.dispatch(EditorAction.DeleteObject(it)) }
         onFlipObject = { viewModel.dispatch(EditorAction.FlipObject(it)) }
+        onCanvasTap = { x, y -> placePendingText(x, y) }
         onEditText = { id ->
             viewModel.objectById(id)
                 ?.takeIf { it.type == EditorObjectType.TEXT }
@@ -71,16 +68,16 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
     }
 
     private fun setupToolbar() {
-        setupAction(binding.actionText, R.drawable.ic_text, R.string.text) {
+        binding.actionText.safeClick {
             showTextDialog(null)
         }
-        setupAction(binding.actionImage, R.drawable.ic_image, R.string.image) {
+        binding.actionImage.safeClick {
             imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
-        setupAction(binding.actionGrid, R.drawable.ic_grid, R.string.grid) {
+        binding.actionGrid.safeClick {
             viewModel.dispatch(EditorAction.ToggleGrid)
         }
-        setupAction(binding.actionReset, R.drawable.ic_reset, R.string.reset) {
+        binding.actionReset.safeClick {
             viewModel.dispatch(EditorAction.Reset)
         }
 
@@ -92,17 +89,6 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
             viewModel.forceSave()
             showToast(getString(R.string.saved))
         }
-    }
-
-    private fun setupAction(
-        action: ItemEditorActionBinding,
-        iconRes: Int,
-        labelRes: Int,
-        onClick: () -> Unit
-    ) {
-        action.actionIcon.setImageResource(iconRes)
-        action.actionLabel.setText(labelRes)
-        action.root.safeClick { onClick() }
     }
 
     private fun collectState() {
@@ -137,85 +123,51 @@ class JournalCanvasEditorActivity : AppCompatActivity() {
     }
 
     private fun showTextDialog(objectToEdit: EditorObject?) {
-        val input = EditText(this).apply {
-            setText(objectToEdit?.text ?: getString(R.string.journal_text))
-            setSelection(text.length)
-            textSize = 18f
-            setSingleLine(false)
-            minLines = 2
-            setPadding(16.dp, 10.dp, 16.dp, 10.dp)
-        }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(if (objectToEdit == null) R.string.add_text else R.string.edit_text)
-            .setView(input)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.done) { _, _ ->
-                val value = input.text.toString().ifBlank { getString(R.string.journal_text) }
-                if (objectToEdit == null) {
-                    viewModel.dispatch(EditorAction.AddText(value))
-                } else {
-                    viewModel.dispatch(EditorAction.UpdateText(objectToEdit.id, value))
-                }
+        dialogs.showTextDialog(objectToEdit) { value ->
+            if (objectToEdit == null) {
+                pendingTextPlacement = value
+                binding.journalCanvas.isPlacementMode = true
+                showToast(getString(R.string.tap_canvas_to_place_text))
+            } else {
+                viewModel.dispatch(EditorAction.UpdateText(objectToEdit.id, value))
             }
-            .create()
-
-        dialog.setOnShowListener {
-            input.requestFocus()
-            dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
         }
-        dialog.show()
+    }
+
+    private fun placePendingText(x: Float, y: Float) {
+        val text = pendingTextPlacement ?: return
+        pendingTextPlacement = null
+        binding.journalCanvas.isPlacementMode = false
+        viewModel.dispatch(EditorAction.AddText(text, centerX = x, centerY = y))
     }
 
     private fun showLayerDialog() {
         val state = viewModel.state.value
+        val selectedObject = state.selectedObjectId?.let { selectedId ->
+            state.document.objects.firstOrNull { it.id == selectedId }
+        }
+        if (selectedObject != null) {
+            showLayerActionDialog(selectedObject)
+            return
+        }
+
         val objects = state.document.objects.sortedByDescending { it.zIndex }
         if (objects.isEmpty()) {
             showToast(getString(R.string.layers))
             return
         }
 
-        val labels = objects.map { obj ->
-            val type = if (obj.type == EditorObjectType.TEXT) obj.text.take(18).ifBlank { "Text" } else "Image"
-            val stateText = buildString {
-                if (!obj.visible) append(" hidden")
-                if (obj.locked) append(" locked")
-            }
-            "$type$stateText"
-        }.toTypedArray()
-
-        AlertDialog.Builder(this)
-            .setTitle(R.string.layers)
-            .setItems(labels) { _, which ->
-                showLayerActionDialog(objects[which])
-            }
-            .show()
+        dialogs.showLayerPicker(objects, ::showLayerActionDialog)
     }
 
     private fun showLayerActionDialog(obj: EditorObject) {
-        val actions = arrayOf(
-            getString(R.string.bring_forward),
-            getString(R.string.send_backward),
-            getString(R.string.bring_to_front),
-            getString(R.string.send_to_back),
-            getString(R.string.hide_show),
-            getString(R.string.lock_unlock),
-            getString(R.string.delete)
+        dialogs.showLayerActions(
+            obj = obj,
+            onReorder = { viewModel.dispatch(EditorAction.ReorderObject(obj.id, it)) },
+            onToggleVisibility = { viewModel.dispatch(EditorAction.SetObjectVisibility(obj.id, !obj.visible)) },
+            onToggleLock = { viewModel.dispatch(EditorAction.SetObjectLocked(obj.id, !obj.locked)) },
+            onDelete = { viewModel.dispatch(EditorAction.DeleteObject(obj.id)) }
         )
-        AlertDialog.Builder(this)
-            .setTitle(if (obj.type == EditorObjectType.TEXT) obj.text else "Image")
-            .setItems(actions) { _, which ->
-                when (which) {
-                    0 -> viewModel.dispatch(EditorAction.ReorderObject(obj.id, LayerDirection.BringForward))
-                    1 -> viewModel.dispatch(EditorAction.ReorderObject(obj.id, LayerDirection.SendBackward))
-                    2 -> viewModel.dispatch(EditorAction.ReorderObject(obj.id, LayerDirection.BringToFront))
-                    3 -> viewModel.dispatch(EditorAction.ReorderObject(obj.id, LayerDirection.SendToBack))
-                    4 -> viewModel.dispatch(EditorAction.SetObjectVisibility(obj.id, !obj.visible))
-                    5 -> viewModel.dispatch(EditorAction.SetObjectLocked(obj.id, !obj.locked))
-                    6 -> viewModel.dispatch(EditorAction.DeleteObject(obj.id))
-                }
-            }
-            .show()
     }
 
     private fun showToast(message: String) {

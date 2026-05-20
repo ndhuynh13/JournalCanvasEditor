@@ -23,10 +23,13 @@ class CanvasStateStore @Inject constructor(
         }.getOrNull()
     }
 
-    suspend fun save(document: EditorDocument) = withContext(Dispatchers.IO) {
-        tempFile.writeText(gson.toJson(document))
-        if (stateFile.exists()) stateFile.delete()
-        tempFile.renameTo(stateFile)
+    suspend fun save(document: EditorDocument): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            tempFile.writeText(gson.toJson(document))
+            if (stateFile.exists()) stateFile.delete()
+            tempFile.renameTo(stateFile)
+            Unit
+        }
     }
 
     suspend fun clear() = withContext(Dispatchers.IO) {

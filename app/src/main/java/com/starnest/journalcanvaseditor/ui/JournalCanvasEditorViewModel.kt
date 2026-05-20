@@ -66,15 +66,17 @@ class JournalCanvasEditorViewModel @Inject constructor(
                 updateDocument(after, recordHistory = action.commit, before = before)
             }
             EditorAction.Reset -> {
-                history.clear()
+                val before = _state.value.document
+                val after = reducer.reduce(before, action)
                 pendingTransformBefore = null
-                updateState {
-                    EditorState(
-                        document = EditorDocument(),
-                        selectedObjectId = null
-                    )
-                }
-                scheduleSave()
+                snapEngine.reset()
+                updateDocument(
+                    document = after,
+                    recordHistory = true,
+                    before = before,
+                    selectedObjectId = null
+                )
+                updateState { it.copy(guides = emptyList()) }
             }
             is EditorAction.AddImage,
             is EditorAction.AddText,
@@ -90,7 +92,7 @@ class JournalCanvasEditorViewModel @Inject constructor(
 
     fun importImage(uri: Uri, onError: (String) -> Unit) {
         viewModelScope.launch {
-            runCatching { imageStore.copy(uri) }
+            imageStore.copy(uri)
                 .onSuccess {
                     dispatch(
                         EditorAction.AddImage(
@@ -108,7 +110,7 @@ class JournalCanvasEditorViewModel @Inject constructor(
         val document = _state.value.document
         viewModelScope.launch {
             updateState { it.copy(exportStatus = ExportStatus.Running) }
-            runCatching { exporter.export(document) }
+            exporter.export(document)
                 .onSuccess { uri -> updateState { it.copy(exportStatus = ExportStatus.Success(uri)) } }
                 .onFailure { e -> updateState { it.copy(exportStatus = ExportStatus.Error(e.message ?: "Export failed")) } }
         }
