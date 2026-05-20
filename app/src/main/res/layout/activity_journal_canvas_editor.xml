@@ -18,6 +18,15 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
+        <ImageButton
+            android:id="@+id/theme_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_toolbar_button"
+            android:contentDescription="Toggle theme"
+            android:padding="@dimen/space_8"
+            android:src="@drawable/ic_theme" />
+
         <Space
             android:layout_width="0dp"
             android:layout_height="1dp"
